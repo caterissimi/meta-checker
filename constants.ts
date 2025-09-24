@@ -1,0 +1,6 @@
+
+export const META_TITLE_MIN_LENGTH = 30;
+export const META_TITLE_MAX_LENGTH = 60;
+
+export const META_DESCRIPTION_MIN_LENGTH = 70;
+export const META_DESCRIPTION_MAX_LENGTH = 160;
