@@ -1,0 +1,342 @@
+{
+  "name": "SEO Meta Tag Generator from Google Sheets",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "8f5e3c56-1a2b-4d3c-9e0f-1234567890ab",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $json.spreadsheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.sheetName }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "URL": "={{ $json.url }}"
+          }
+        },
+        "options": {
+          "dataLocationOnSheet": "A1"
+        }
+      },
+      "id": "9a6b4d78-2c3e-4f5a-8b1c-234567890bcd",
+      "name": "Google Sheets - Read URLs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [450, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "1b2c3d4e-5f6a-7b8c-9d0e-f12345678901",
+      "name": "Loop Over URLs",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.URL }}",
+        "options": {
+          "timeout": 30000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 5
+            }
+          }
+        }
+      },
+      "id": "2c3d4e5f-6a7b-8c9d-0e1f-234567890123",
+      "name": "Fetch Page Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract text content from HTML\nconst html = $input.item.json.data;\n\n// Remove script and style tags\nlet cleanText = html.replace(/<script[^>]*>.*?<\\/script>/gis, '');\ncleanText = cleanText.replace(/<style[^>]*>.*?<\\/style>/gis, '');\n\n// Remove HTML tags\ncleanText = cleanText.replace(/<[^>]+>/g, ' ');\n\n// Decode HTML entities\ncleanText = cleanText\n  .replace(/&nbsp;/g, ' ')\n  .replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<')\n  .replace(/&gt;/g, '>')\n  .replace(/&quot;/g, '\"')\n  .replace(/&#39;/g, \"'\");\n\n// Remove extra whitespace\ncleanText = cleanText.replace(/\\s+/g, ' ').trim();\n\n// Extract title from HTML if exists\nconst titleMatch = html.match(/<title[^>]*>([^<]+)<\\/title>/i);\nconst currentTitle = titleMatch ? titleMatch[1].trim() : '';\n\n// Extract meta description if exists\nconst metaDescMatch = html.match(/<meta[^>]*name=[\"']description[\"'][^>]*content=[\"']([^\"']*)[\"']/i);\nconst currentDescription = metaDescMatch ? metaDescMatch[1].trim() : '';\n\n// Limit content to first 3000 characters for AI analysis\nconst contentSummary = cleanText.substring(0, 3000);\n\nreturn {\n  url: $input.item.json.URL,\n  rowIndex: $input.item.json.__rowIndex,\n  pageContent: contentSummary,\n  currentTitle: currentTitle,\n  currentDescription: currentDescription\n};"
+      },
+      "id": "3d4e5f6a-7b8c-9d0e-1f23-4567890abcde",
+      "name": "Extract Page Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $credentials.apiKey }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "contents",
+              "value": "=[{\"parts\":[{\"text\":\"Analyze the following web page content and generate SEO-optimized meta title and meta description.\\n\\nPage URL: {{ $json.url }}\\nCurrent Title: {{ $json.currentTitle }}\\nCurrent Meta Description: {{ $json.currentDescription }}\\n\\nPage Content:\\n{{ $json.pageContent }}\\n\\nPlease provide:\\n1. An optimized meta title (max 60 characters) that is engaging and includes primary keywords\\n2. An optimized meta description (max 160 characters) that is compelling and encourages clicks\\n\\nReturn ONLY a JSON object with this exact structure:\\n{\\n  \\\"optimizedTitle\\\": \\\"your optimized title here\\\",\\n  \\\"optimizedDescription\\\": \\\"your optimized description here\\\"\\n}\"}]}]"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "4e5f6a7b-8c9d-0e1f-2345-67890abcdef1",
+      "name": "Generate Meta Tags with Gemini",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 300],
+      "credentials": {
+        "googleApi": {
+          "id": "2",
+          "name": "Google API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract the generated content from Gemini response\nconst response = $input.item.json;\n\n// Navigate through Gemini's response structure\nconst generatedText = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';\n\n// Parse the JSON response\nlet metaTags;\ntry {\n  metaTags = JSON.parse(generatedText);\n} catch (e) {\n  // If parsing fails, try to extract JSON from text\n  const jsonMatch = generatedText.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    metaTags = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('Failed to parse Gemini response');\n  }\n}\n\nreturn {\n  url: $('Extract Page Content').item.json.url,\n  rowIndex: $('Extract Page Content').item.json.rowIndex,\n  optimizedTitle: metaTags.optimizedTitle || '',\n  optimizedDescription: metaTags.optimizedDescription || ''\n};"
+      },
+      "id": "5f6a7b8c-9d0e-1f23-4567-890abcdef123",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Google Sheets - Read URLs').item.json.spreadsheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Google Sheets - Read URLs').item.json.sheetName }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Meta Title": "={{ $json.optimizedTitle }}",
+            "Meta Description": "={{ $json.optimizedDescription }}"
+          }
+        },
+        "options": {
+          "dataLocationOnSheet": "={{ 'A' + ($json.rowIndex + 1) }}"
+        }
+      },
+      "id": "6a7b8c9d-0e1f-2345-6789-0abcdef12345",
+      "name": "Update Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1650, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "1234567890",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notExists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7b8c9d0e-1f23-4567-890a-bcdef1234567",
+      "name": "Check for Errors",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1250, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Add a small delay to avoid rate limiting\nawait new Promise(resolve => setTimeout(resolve, 1000));\nreturn $input.all();"
+      },
+      "id": "8c9d0e1f-2345-6789-0abc-def123456789",
+      "name": "Rate Limit Delay",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 500]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Read URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Read URLs": {
+      "main": [
+        [
+          {
+            "node": "Loop Over URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over URLs": {
+      "main": [
+        [
+          {
+            "node": "Fetch Page Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Page Content": {
+      "main": [
+        [
+          {
+            "node": "Extract Page Content",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Rate Limit Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Page Content": {
+      "main": [
+        [
+          {
+            "node": "Generate Meta Tags with Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Meta Tags with Gemini": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check for Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Update Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Loop Over URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rate Limit Delay": {
+      "main": [
+        []
+      ]
+    },
+    "Check for Errors": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "your-instance-id"
+  },
+  "tags": []
+}
