@@ -1,6 +1,20 @@
 # Automazione n8n per SEO Meta Tag Generator
 
+**Versione 2.0** - Workflow corretto e funzionante ✅
+
 Questa directory contiene un workflow n8n completo per automatizzare la generazione di meta title e meta description ottimizzati SEO a partire da un elenco di URL in Google Sheets.
+
+## 🆕 Novità Versione 2.0
+
+- ✅ **RISOLTO**: Il workflow ora aggiorna correttamente Google Sheets
+- ✅ Nodo Read configurato correttamente con operation "read"
+- ✅ Nodo Update usa column matching per identificare le righe
+- ✅ Parsing JSON di Gemini migliorato (gestisce markdown code blocks)
+- ✅ Workflow semplificato senza loop complessi
+- ✅ Meta tag generati in **italiano**
+- ✅ Gestione errori migliorata
+
+📘 **Problemi?** Consulta la [Guida al Troubleshooting](./TROUBLESHOOTING.md)
 
 ## 📋 Panoramica
 
@@ -8,8 +22,8 @@ Il workflow esegue i seguenti passaggi:
 1. Legge un elenco di URL da un foglio Google Sheets
 2. Per ogni URL, scarica il contenuto della pagina web
 3. Estrae il testo principale e i meta tag esistenti
-4. Utilizza Google Gemini AI per generare meta title e description ottimizzati SEO
-5. Scrive i risultati ottimizzati nelle colonne corrispondenti del Google Sheets
+4. Utilizza Google Gemini AI per generare meta title e description ottimizzati SEO **in italiano**
+5. Scrive i risultati ottimizzati nelle colonne corrispondenti del Google Sheets tramite **match sulla colonna URL**
 
 ## 🚀 Prerequisiti
 
@@ -20,6 +34,8 @@ Il workflow esegue i seguenti passaggi:
 
 ## 📊 Struttura del Google Sheets
 
+⚠️ **IMPORTANTE**: La struttura deve essere ESATTAMENTE come indicato (case-sensitive!)
+
 Il tuo foglio Google Sheets deve avere le seguenti colonne (la prima riga deve contenere le intestazioni):
 
 | URL | Meta Title | Meta Description |
@@ -28,9 +44,27 @@ Il tuo foglio Google Sheets deve avere le seguenti colonne (la prima riga deve c
 | https://example.com/page2 | | |
 | https://example.com/page3 | | |
 
-- **Colonna A (URL)**: Gli URL delle pagine da analizzare
-- **Colonna B (Meta Title)**: Verrà popolata automaticamente con il meta title ottimizzato
-- **Colonna C (Meta Description)**: Verrà popolata automaticamente con la meta description ottimizzata
+### ✅ Regole Critiche:
+
+1. **Colonna A**: DEVE chiamarsi **"URL"** (tutto maiuscolo, case-sensitive)
+2. **Colonna B**: DEVE chiamarsi **"Meta Title"** (con spazio, case-sensitive)
+3. **Colonna C**: DEVE chiamarsi **"Meta Description"** (con spazio, case-sensitive)
+4. **Prima riga**: Deve contenere gli header nella riga 1
+5. **Dati**: Devono iniziare dalla riga 2
+
+### ❌ Errori Comuni da Evitare:
+
+- ❌ NON usare "url" (minuscolo) → Usa "URL"
+- ❌ NON usare "MetaTitle" (senza spazio) → Usa "Meta Title"
+- ❌ NON usare "meta_title" (underscore) → Usa "Meta Title"
+- ❌ NON lasciare righe vuote tra header e dati
+
+### 📥 Template Pronto
+
+Usa il file `google-sheets-template.csv` per creare rapidamente il foglio con la struttura corretta:
+1. Apri Google Sheets
+2. File → Importa → Carica → Seleziona `google-sheets-template.csv`
+3. Aggiungi i tuoi URL nella colonna A
 
 ## 🔧 Installazione e Configurazione
 
@@ -51,11 +85,16 @@ Il tuo foglio Google Sheets deve avere le seguenti colonne (la prima riga deve c
 
 ### 3. Configura le Credenziali Google Gemini API
 
+⚠️ **IMPORTANTE**: Usa il tipo di credenziale corretto!
+
 1. Clicca sul nodo **Generate Meta Tags with Gemini**
 2. Clicca su **Create New Credential**
-3. Seleziona **Google API**
+3. Seleziona **"Google PaLM API"** (NON "Google API" generica)
 4. Inserisci la tua API Key di Gemini nel campo **API Key**
+   - Ottieni la key da: https://aistudio.google.com/app/apikey
 5. Salva le credenziali
+
+**Nota**: Anche se si chiama "PaLM API", funziona con Gemini perché usano lo stesso endpoint.
 
 ### 4. Configura il Google Sheets
 
@@ -73,36 +112,53 @@ Il tuo foglio Google Sheets deve avere le seguenti colonne (la prima riga deve c
 3. Il workflow inizierà a processare gli URL uno per uno
 4. Verifica che i risultati vengano scritti correttamente nel Google Sheets
 
-## ⚙️ Come Funziona il Workflow
+## ⚙️ Come Funziona il Workflow (Versione 2.0)
 
 ### Nodi del Workflow
 
-1. **Manual Trigger**: Avvia il workflow manualmente
+1. **When clicking 'Test workflow'**: Trigger manuale per avviare il workflow
 
-2. **Google Sheets - Read URLs**: Legge tutte le righe dal foglio Google Sheets
+2. **Read Google Sheets**: Legge TUTTE le righe dal foglio usando `operation: "read"`
+   - Output: Array di oggetti con tutte le righe
 
-3. **Loop Over URLs**: Itera su ogni URL trovato nel foglio
+3. **Fetch Page Content**: Scarica il contenuto HTML di ogni pagina
+   - n8n processa automaticamente tutti gli items dall'output precedente
+   - Timeout: 30 secondi per pagina
+   - Continua anche se una pagina fallisce
 
-4. **Fetch Page Content**: Scarica il contenuto HTML della pagina
+4. **Extract Page Content**: Usa il nodo **Set** per estrarre:
+   - URL della pagina
+   - Numero di riga (per riferimento)
+   - Testo pulito (primi 3000 caratteri)
+   - Meta title corrente (se esiste)
+   - Meta description corrente (se esiste)
 
-5. **Extract Page Content**: Estrae il testo pulito dalla pagina HTML e i meta tag esistenti
+5. **Generate Meta Tags with Gemini**: Chiama l'API Gemini
+   - Usa il modello `gemini-2.0-flash-exp`
+   - Genera meta tag **in italiano**
+   - Formato richiesta: JSON corretto con `contents` array
 
-6. **Generate Meta Tags with Gemini**: Chiama l'API Google Gemini per generare meta tag ottimizzati basati sul contenuto
+6. **Parse AI Response**: Usa il nodo **Set** per estrarre:
+   - Rimuove eventuali markdown code blocks (```json)
+   - Estrae `optimizedTitle` e `optimizedDescription`
+   - Gestisce errori di parsing
 
-7. **Parse AI Response**: Elabora la risposta di Gemini ed estrae i meta tag generati
+7. **Update Google Sheets**: Aggiorna il foglio usando **column matching**
+   - `columnToMatchOn: "URL"` - identifica la riga tramite URL
+   - Aggiorna solo le colonne "Meta Title" e "Meta Description"
+   - Non modifica altre colonne
 
-8. **Update Google Sheets**: Aggiorna la riga corrispondente nel foglio con i nuovi meta tag
-
-9. **Rate Limit Delay**: Introduce un ritardo di 1 secondo tra le richieste per evitare rate limiting
-
-10. **Check for Errors**: Verifica eventuali errori nella generazione
+8. **Wait to avoid rate limiting**: Pausa di 2 secondi tra ogni URL
+   - Previene errori "429 Too Many Requests"
+   - Configurabile (aumenta se necessario)
 
 ### Logica di Elaborazione
 
-Il workflow processa **un URL alla volta** in modo sequenziale. Questo approccio:
-- Evita problemi di rate limiting con le API
-- Permette di monitorare il progresso in tempo reale
-- Gestisce meglio gli errori per singolo URL
+Il workflow processa **automaticamente tutti gli URL** in sequenza:
+- n8n passa automaticamente ogni item da un nodo all'altro
+- Nessun loop manuale necessario
+- Ogni URL viene processato completamente prima di passare al successivo
+- Rate limiting gestito con Wait node
 
 ## 🎯 Ottimizzazione SEO
 
@@ -158,27 +214,43 @@ Per eseguire il workflow automaticamente:
 
 ## 🐛 Risoluzione Problemi
 
-### Errore: "Failed to parse Gemini response"
+### ⚠️ Il workflow non aggiorna Google Sheets?
 
-- Verifica che la tua API Key di Gemini sia corretta
-- Controlla di avere credito disponibile sul tuo account Google Cloud
-- Verifica che il modello `gemini-2.0-flash-exp` sia disponibile
+**Versione 2.0 ha risolto questo problema!** Se hai ancora problemi:
 
-### Errore: "Cannot read property 'URL' of undefined"
+1. **Reimporta il workflow** - Usa il file `seo-meta-generator.json` aggiornato
+2. **Verifica la struttura del Google Sheets** - Deve avere esattamente "URL", "Meta Title", "Meta Description"
+3. **Controlla le credenziali** - Usa "Google PaLM API" per Gemini, non "Google API"
 
-- Assicurati che la prima colonna del tuo Google Sheets si chiami esattamente "URL" (case-sensitive)
-- Verifica che ci siano URL effettivi nella colonna
+### 📘 Guida Completa al Troubleshooting
 
-### Il workflow si ferma dopo alcuni URL
+Per una guida dettagliata alla risoluzione di tutti i problemi, consulta:
 
-- Potrebbe essere un problema di rate limiting
-- Aumenta il delay nel nodo **Rate Limit Delay** (da 1000ms a 2000ms o più)
+👉 **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)**
 
-### Meta tag non vengono scritti nel Google Sheets
+Include:
+- ✅ Tutte le correzioni implementate nella v2.0
+- ✅ Come verificare che il workflow funzioni
+- ✅ Errori comuni e soluzioni
+- ✅ Debug avanzato
+- ✅ Test manuali per isolare problemi
 
-- Verifica i permessi del tuo account Google per scrivere sul foglio
-- Controlla che il nome del foglio (tab) sia corretto
-- Verifica che le colonne "Meta Title" e "Meta Description" esistano
+### Errori Rapidi
+
+**"Column 'Meta Title' not found"**
+- Verifica che la colonna si chiami ESATTAMENTE "Meta Title" (con spazio)
+
+**"No matching row found for URL"**
+- Controlla che gli URL siano identici (incluso http/https)
+
+**"Failed to parse Gemini response"**
+- Il nuovo parsing dovrebbe risolvere questo automaticamente
+- Verifica che la tua API Key sia valida
+
+**Celle rimangono vuote**
+- Controlla l'output del nodo "Parse AI Response"
+- Deve contenere `optimizedTitle` e `optimizedDescription`
+- Verifica permessi di scrittura sul foglio
 
 ## 💡 Suggerimenti
 
